@@ -1,11 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import * as Tone from 'tone';
+import leftSprite from './assets/L.png';
+import rightSprite from './assets/R.png';
+import leftJumpSprite from './assets/Lj.png';
+import rightJumpSprite from './assets/Rj.png';
 import './App.css';
 
 type Pattern = {
   period: number;
   as: number;
 };
+
+type DisplaySprite = 'L' | 'R' | 'Lj' | 'Rj';
 
 const PRESETS: Pattern[] = [
   { period: 1.0, as: 0.5 },
@@ -18,15 +24,16 @@ const PRESETS: Pattern[] = [
 
 const App = () => {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentBeat, setCurrentBeat] = useState(0);
   const [currentPattern, setCurrentPattern] = useState<Pattern>(PRESETS[0]);
   const [queuedPattern, setQueuedPattern] = useState<Pattern | null>(null);
+  const [displaySprite, setDisplaySprite] = useState<DisplaySprite>('L');
 
   const synthRef = useRef<Tone.Synth | null>(null);
   const loopRef = useRef<Tone.Loop | null>(null);
   const nextBeatTimeRef = useRef(0);
   const currentPatternRef = useRef<Pattern>(PRESETS[0]);
   const queuedPatternRef = useRef<Pattern | null>(null);
+  const nextFootRef = useRef<'L' | 'R'>('L');
 
   useEffect(() => {
     synthRef.current = new Tone.Synth({
@@ -52,11 +59,30 @@ const App = () => {
     return [0, period * 0.5 * (1 + as), period];
   };
 
+  const spriteSources: Record<DisplaySprite, string> = {
+    L: leftSprite,
+    R: rightSprite,
+    Lj: leftJumpSprite,
+    Rj: rightJumpSprite,
+  };
+
+  const spriteAlt: Record<DisplaySprite, string> = {
+    L: 'Left step',
+    R: 'Right step',
+    Lj: 'Jump between left and right',
+    Rj: 'Jump between right and left',
+  };
+
   const schedulePattern = (pattern: Pattern, startTime: number) => {
     const beatTimes = calculateBeatTimes(pattern);
+    const scheduledFeet: Array<'L' | 'R'> = [];
 
     beatTimes.forEach((beatOffset, index) => {
       const absoluteTime = startTime + beatOffset;
+      const footForBeat = nextFootRef.current;
+      nextFootRef.current = footForBeat === 'L' ? 'R' : 'L';
+      scheduledFeet.push(footForBeat);
+
       Tone.Transport.schedule((time) => {
         synthRef.current?.triggerAttackRelease(
           index === 0 ? 'C5' : 'C4',
@@ -65,9 +91,21 @@ const App = () => {
         );
 
         Tone.Draw.schedule(() => {
-          setCurrentBeat(index);
+          setDisplaySprite(footForBeat);
         }, time);
       }, absoluteTime);
+    });
+
+    beatTimes.slice(0, -1).forEach((beatOffset, index) => {
+      const midpointOffset = (beatOffset + beatTimes[index + 1]) / 2;
+      const midpointTime = startTime + midpointOffset;
+      const precedingFoot = scheduledFeet[index];
+
+      Tone.Transport.schedule((time) => {
+        Tone.Draw.schedule(() => {
+          setDisplaySprite(precedingFoot === 'L' ? 'Lj' : 'Rj');
+        }, time);
+      }, midpointTime);
     });
 
     return startTime + pattern.period;
@@ -101,6 +139,8 @@ const App = () => {
     currentPatternRef.current = currentPattern;
     queuedPatternRef.current = null;
     setQueuedPattern(null);
+    nextFootRef.current = 'L';
+    setDisplaySprite('L');
 
     Tone.Transport.start();
 
@@ -122,9 +162,10 @@ const App = () => {
     loopRef.current?.dispose();
     loopRef.current = null;
 
-    setCurrentBeat(0);
     setQueuedPattern(null);
     queuedPatternRef.current = null;
+    nextFootRef.current = 'L';
+    setDisplaySprite('L');
   };
 
   const randomizePattern = () => {
@@ -169,14 +210,13 @@ const App = () => {
         </header>
 
         <section className="beat-indicators">
-          {[0, 1, 2].map((beat) => (
-            <div
-              key={beat}
-              className={`beat-dot ${currentBeat === beat && isPlaying ? 'active' : ''}`}
-            >
-              <span>{beat === 0 ? 'Start' : beat === 1 ? 'Mid' : 'End'}</span>
-            </div>
-          ))}
+          <div className={`beat-dot ${isPlaying ? 'active' : ''}`}>
+            <img
+              src={spriteSources[displaySprite]}
+              alt={spriteAlt[displaySprite]}
+              className="beat-sprite"
+            />
+          </div>
         </section>
         <section className="pattern-display">
           <div className="pattern-row">
@@ -203,15 +243,15 @@ const App = () => {
             {isPlaying ? 'Stop' : 'Start'}
           </button>
           <button className="randomize" onClick={randomizePattern}>
-            Random Pattern
+            Skip
           </button>
           <button className="symmetric" onClick={queueSymmetric}>
-            Symmetric Pattern
+            Walk/Run
           </button>
         </section>
 
         <footer>
-          Tap Start to begin. Random Pattern queues changes at the next loop boundary.
+          Tap Start to begin. Try to match your steps to the beat.
         </footer>
       </div>
     </div>

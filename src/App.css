@@ -85,8 +85,9 @@
 
 .pattern-row strong {
   font-family: 'Space Mono', 'Inter', system-ui, sans-serif;
-  font-size: 1.2rem;
+  font-size: 0.8rem;
   color: #3d2f2a;
+  font-weight: 200;
 }
 
 .pattern-display .queued {

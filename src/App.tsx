@@ -164,8 +164,8 @@ const App = () => {
     <div className="app-shell">
       <div className="metronome-card">
         <header>
-          <p className="eyebrow">research prototype</p>
-          <h1>Parametric Metronome</h1>
+          <p className="eyebrow">prototype</p>
+          <h1>TreadMore</h1>
         </header>
 
         <section className="beat-indicators">
@@ -178,20 +178,16 @@ const App = () => {
             </div>
           ))}
         </section>
-
         <section className="pattern-display">
           <div className="pattern-row">
-            <span>Period</span>
-            <strong>{currentPattern.period.toFixed(2)}s</strong>
+            <span>Period (seconds)</span>
+            <strong>{currentPattern.period.toFixed(2)}</strong>
           </div>
           <div className="pattern-row">
             <span>Asymmetry</span>
             <strong>{currentPattern.as.toFixed(2)}</strong>
           </div>
-          <div className="pattern-row">
-            <span>BPM</span>
-            <strong>{(60 / currentPattern.period).toFixed(1)}</strong>
-          </div>
+
           {queuedPattern && (
             <p className="queued">
               Next: period {queuedPattern.period.toFixed(2)}s, as {queuedPattern.as.toFixed(2)}
@@ -210,7 +206,7 @@ const App = () => {
             Random Pattern
           </button>
           <button className="symmetric" onClick={queueSymmetric}>
-            Queue Symmetric (as = 0)
+            Symmetric Pattern
           </button>
         </section>
 

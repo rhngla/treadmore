@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { ChangeEvent } from 'react';
 import * as Tone from 'tone';
 import leftSprite from './assets/L.png';
 import rightSprite from './assets/R.png';
@@ -13,27 +14,30 @@ type Pattern = {
 
 type DisplaySprite = 'L' | 'R' | 'Lj' | 'Rj';
 
-const PRESETS: Pattern[] = [
-  { period: 1.0, as: 0.5 },
-  { period: 1.0, as: 0.0 },
-  { period: 1.0, as: -0.5 },
-  { period: 0.8, as: 0.3 },
-  { period: 1.2, as: -0.3 },
-  { period: 0.6, as: 0.7 },
-];
+const PERIOD_MIN = 0.25;
+const PERIOD_MAX = 1.25;
+const PERIOD_STEP = 0.01;
+const ASYMMETRY_MIN = -1;
+const ASYMMETRY_MAX = 1;
+const ASYMMETRY_STEP = 0.05;
+const DEFAULT_PATTERN: Pattern = { period: 1.0, as: 0.0 };
+const ROUNDS_BEFORE_SWITCH = 3;
 
 const App = () => {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentPattern, setCurrentPattern] = useState<Pattern>(PRESETS[0]);
+  const [currentPattern, setCurrentPattern] = useState<Pattern>(DEFAULT_PATTERN);
   const [queuedPattern, setQueuedPattern] = useState<Pattern | null>(null);
   const [displaySprite, setDisplaySprite] = useState<DisplaySprite>('L');
+  const [periodSetting, setPeriodSetting] = useState(DEFAULT_PATTERN.period);
+  const [asymmetrySetting, setAsymmetrySetting] = useState(DEFAULT_PATTERN.as);
 
   const synthRef = useRef<Tone.Synth | null>(null);
   const loopRef = useRef<Tone.Loop | null>(null);
   const nextBeatTimeRef = useRef(0);
-  const currentPatternRef = useRef<Pattern>(PRESETS[0]);
+  const currentPatternRef = useRef<Pattern>(DEFAULT_PATTERN);
   const queuedPatternRef = useRef<Pattern | null>(null);
   const nextFootRef = useRef<'L' | 'R'>('L');
+  const roundsUntilSwitchRef = useRef(0);
 
   useEffect(() => {
     synthRef.current = new Tone.Synth({
@@ -112,17 +116,23 @@ const App = () => {
   };
 
   const scheduleNextLoop = (_time?: number) => {
-    const patternToPlay = queuedPatternRef.current ?? currentPatternRef.current;
+    let patternToPlay = currentPatternRef.current;
 
     if (queuedPatternRef.current) {
-      currentPatternRef.current = queuedPatternRef.current;
-      setCurrentPattern(queuedPatternRef.current);
-      queuedPatternRef.current = null;
-      setQueuedPattern(null);
+      if (roundsUntilSwitchRef.current <= 0) {
+        currentPatternRef.current = queuedPatternRef.current;
+        patternToPlay = queuedPatternRef.current;
+        setCurrentPattern(queuedPatternRef.current);
+        queuedPatternRef.current = null;
+        setQueuedPattern(null);
+        roundsUntilSwitchRef.current = 0;
 
-      loopRef.current?.dispose();
-      loopRef.current = new Tone.Loop(scheduleNextLoop, currentPatternRef.current.period);
-      loopRef.current.start(nextBeatTimeRef.current);
+        loopRef.current?.dispose();
+        loopRef.current = new Tone.Loop(scheduleNextLoop, currentPatternRef.current.period);
+        loopRef.current.start(nextBeatTimeRef.current);
+      } else {
+        roundsUntilSwitchRef.current -= 1;
+      }
     }
 
     nextBeatTimeRef.current = schedulePattern(patternToPlay, nextBeatTimeRef.current);
@@ -140,6 +150,7 @@ const App = () => {
     queuedPatternRef.current = null;
     setQueuedPattern(null);
     nextFootRef.current = 'L';
+    roundsUntilSwitchRef.current = 0;
     setDisplaySprite('L');
 
     Tone.Transport.start();
@@ -165,40 +176,60 @@ const App = () => {
     setQueuedPattern(null);
     queuedPatternRef.current = null;
     nextFootRef.current = 'L';
+    roundsUntilSwitchRef.current = 0;
     setDisplaySprite('L');
   };
 
-  const randomizePattern = () => {
-    let newPattern: Pattern;
-    do {
-      newPattern = PRESETS[Math.floor(Math.random() * PRESETS.length)];
-    } while (
-      newPattern.period === currentPatternRef.current.period &&
-      newPattern.as === currentPatternRef.current.as
-    );
-
+  const queuePattern = (pattern: Pattern) => {
     if (isPlaying) {
-      queuedPatternRef.current = newPattern;
-      setQueuedPattern(newPattern);
+      queuedPatternRef.current = pattern;
+      setQueuedPattern(pattern);
+      roundsUntilSwitchRef.current = ROUNDS_BEFORE_SWITCH;
     } else {
-      currentPatternRef.current = newPattern;
-      setCurrentPattern(newPattern);
+      queuedPatternRef.current = null;
+      setQueuedPattern(null);
+      currentPatternRef.current = pattern;
+      setCurrentPattern(pattern);
+      roundsUntilSwitchRef.current = 0;
     }
+  };
+
+  const randomizePattern = () => {
+    const randomPeriod = Math.random() * (PERIOD_MAX - PERIOD_MIN) + PERIOD_MIN;
+    const randomAsymmetry =
+      Math.random() * (ASYMMETRY_MAX - ASYMMETRY_MIN) + ASYMMETRY_MIN;
+    const nextPeriod = parseFloat(randomPeriod.toFixed(2));
+    const nextAsymmetry = parseFloat(randomAsymmetry.toFixed(2));
+    const newPattern: Pattern = {
+      period: nextPeriod,
+      as: nextAsymmetry,
+    };
+
+    setPeriodSetting(nextPeriod);
+    setAsymmetrySetting(nextAsymmetry);
+    queuePattern(newPattern);
   };
 
   const queueSymmetric = () => {
     const symmetricPattern: Pattern = {
-      period: currentPatternRef.current.period,
+      period: periodSetting,
       as: 0.0,
     };
 
-    if (isPlaying) {
-      queuedPatternRef.current = symmetricPattern;
-      setQueuedPattern(symmetricPattern);
-    } else {
-      currentPatternRef.current = symmetricPattern;
-      setCurrentPattern(symmetricPattern);
-    }
+    setAsymmetrySetting(0);
+    queuePattern(symmetricPattern);
+  };
+
+  const handlePeriodChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const nextPeriod = parseFloat(event.target.value);
+    setPeriodSetting(nextPeriod);
+    queuePattern({ period: nextPeriod, as: asymmetrySetting });
+  };
+
+  const handleAsymmetryChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const nextAsymmetry = parseFloat(event.target.value);
+    setAsymmetrySetting(nextAsymmetry);
+    queuePattern({ period: periodSetting, as: nextAsymmetry });
   };
 
   return (
@@ -219,18 +250,47 @@ const App = () => {
           </div>
         </section>
         <section className="pattern-display">
-          <div className="pattern-row">
-            <span>Period (seconds)</span>
-            <strong>{currentPattern.period.toFixed(2)}</strong>
+          <div className="slider-control">
+            <div className="slider-header">
+              <span>Period</span>
+              <span className="slider-value">{periodSetting.toFixed(2)}s</span>
+            </div>
+            <input
+              type="range"
+              min={PERIOD_MIN}
+              max={PERIOD_MAX}
+              step={PERIOD_STEP}
+              value={periodSetting}
+              onChange={handlePeriodChange}
+            />
+            <div className="slider-scale">
+              <span>{PERIOD_MIN.toFixed(2)}s</span>
+              <span>{PERIOD_MAX.toFixed(2)}s</span>
+            </div>
           </div>
-          <div className="pattern-row">
-            <span>Asymmetry</span>
-            <strong>{currentPattern.as.toFixed(2)}</strong>
+
+          <div className="slider-control">
+            <div className="slider-header">
+              <span>Asymmetry</span>
+              <span className="slider-value">{asymmetrySetting.toFixed(2)}</span>
+            </div>
+            <input
+              type="range"
+              min={ASYMMETRY_MIN}
+              max={ASYMMETRY_MAX}
+              step={ASYMMETRY_STEP}
+              value={asymmetrySetting}
+              onChange={handleAsymmetryChange}
+            />
+            <div className="slider-scale">
+              <span>Symmetric</span>
+              <span>Asymmetric</span>
+            </div>
           </div>
 
           {queuedPattern && (
             <p className="queued">
-              Next: period {queuedPattern.period.toFixed(2)}s, as {queuedPattern.as.toFixed(2)}
+              Coming up: Period {queuedPattern.period.toFixed(2)} s, Asymmetry {queuedPattern.as.toFixed(2)}
             </p>
           )}
         </section>
@@ -243,7 +303,7 @@ const App = () => {
             {isPlaying ? 'Stop' : 'Start'}
           </button>
           <button className="randomize" onClick={randomizePattern}>
-            Skip
+            Skip/Gallop
           </button>
           <button className="symmetric" onClick={queueSymmetric}>
             Walk/Run

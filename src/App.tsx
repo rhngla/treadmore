@@ -467,7 +467,7 @@ const App = () => {
 
         <section className="inputs">
           <div className="field">
-            <label htmlFor="period">Period (seconds)</label>
+            <label htmlFor="period">Period (s)</label>
             <input
               id="period"
               type="number"
@@ -478,13 +478,13 @@ const App = () => {
               onChange={(event) => setPeriodInput(event.target.value)}
             />
             <p className="hint">
-              Range: ({PERIOD_MIN.toFixed(2)}, {PERIOD_MAX.toFixed(2)})
+              Range: ({PERIOD_MIN.toFixed(1)}, {PERIOD_MAX.toFixed(1)})
             </p>
           </div>
 
           <div className="field">
             <label htmlFor="asymmetry">
-              Asymmetry {pattern === 'walk' && <span className="tag">locked</span>}
+              Asymmetry {pattern === 'walk' && <span className="tag">🔒</span>}
             </label>
             <input
               id="asymmetry"
@@ -511,11 +511,11 @@ const App = () => {
 
         <footer>
           <p className="status">
-            Pattern: <strong>{currentPattern.label}</strong> · Period{' '}
+            Current pattern: <strong>{currentPattern.label}</strong> · Period{' '}
             {effectivePeriod.toFixed(2)}s · Asymmetry {effectiveAsymmetry.toFixed(2)}
           </p>
           <p className="status note">
-            Updated: &mdash; Nov 2025
+            November 2025
           </p>
         </footer>
       </div>

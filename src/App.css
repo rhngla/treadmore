@@ -87,11 +87,29 @@
   gap: 0.4rem;
 }
 
-.pattern-buttons {
+/* .pattern-buttons {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 0.5rem;
+} */
+
+.pattern-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);  /* 3 per row always */
+  gap: 0.5rem;
 }
+
+.pattern-buttons button {
+  border: 1px solid #e4d9c8;
+  background: #f8f1ea;
+  color: #3d2f2a;
+  border-radius: 12px;
+  padding: 0.7rem 0.5rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 120ms ease, transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+
 
 .pattern-buttons button {
   border: 1px solid #e4d9c8;
@@ -116,7 +134,8 @@
 
 .inputs {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  /* grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); */
+  grid-template-columns: repeat(2, 1fr);
   gap: 1rem;
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Tone from 'tone';
 import leftSprite from './assets/L.png';
 import rightSprite from './assets/R.png';
@@ -15,6 +15,7 @@ type SequenceAction =
   | { type: 'sprite'; offset: number; sprite: DisplaySprite };
 
 type StepSequence = {
+  name: string;
   duration: number;
   actions: SequenceAction[];
 };
@@ -63,7 +64,11 @@ class WalkJogPattern implements PatternDefinition {
       { type: 'sprite', offset: intervalLR + intervalSwitch, sprite: 'Rj' },
     ];
 
-    return { duration: intervalLR + intervalRL, actions };
+    return {
+      name: 'walk/jog',
+      duration: intervalLR + intervalRL,
+      actions,
+    };
   }
 }
 
@@ -85,31 +90,31 @@ class SkipPattern implements PatternDefinition {
     let t = 0;
     const actions: SequenceAction[] = [];
 
-    // L
     actions.push({ type: 'tone', offset: t, foot: 'L', note: LEFT_NOTE });
     t += intervalSwitch;
     actions.push({ type: 'sprite', offset: t, sprite: 'Lj' });
     t += intervalLR - intervalSwitch;
 
-    // R
     actions.push({ type: 'tone', offset: t, foot: 'R', note: RIGHT_NOTE });
     t += intervalSwitch;
     actions.push({ type: 'sprite', offset: t, sprite: 'Rj' });
     t += intervalRR - intervalSwitch;
 
-    // R
     actions.push({ type: 'tone', offset: t, foot: 'R', note: RIGHT_NOTE });
     t += intervalSwitch;
     actions.push({ type: 'sprite', offset: t, sprite: 'Rj' });
     t += intervalRL - intervalSwitch;
 
-    // L
     actions.push({ type: 'tone', offset: t, foot: 'L', note: LEFT_NOTE });
     t += intervalSwitch;
     actions.push({ type: 'sprite', offset: t, sprite: 'Lj' });
     t += intervalLL - intervalSwitch;
 
-    return { duration: t, actions };
+    return {
+      name: 'skip',
+      duration: t,
+      actions,
+    };
   }
 }
 
@@ -132,7 +137,11 @@ class GallopPattern implements PatternDefinition {
       { type: 'sprite', offset: intervalLR + intervalSwitch, sprite: 'Rj' },
     ];
 
-    return { duration: intervalLR + intervalRL, actions };
+    return {
+      name: 'gallop',
+      duration: intervalLR + intervalRL,
+      actions,
+    };
   }
 }
 
@@ -144,61 +153,53 @@ const PATTERNS: Record<PatternKind, PatternDefinition> = {
 
 class StepScheduler {
   private nextCycleId: number | null = null;
+  private scheduledActionIds: number[] = [];
   private running = false;
   private currentSequence: StepSequence | null = null;
   private pendingSequence: StepSequence | null = null;
   private leftSynth: Tone.Synth;
   private rightSynth: Tone.Synth;
   private setSprite: (sprite: DisplaySprite) => void;
-  private scheduleCycleBound: () => void;
+  private logEvent: (label: string, payload?: Record<string, unknown>) => void;
+  private scheduleCycleBound: (time: number) => void;
 
-  constructor(setSprite: (sprite: DisplaySprite) => void) {
+  constructor(
+    setSprite: (sprite: DisplaySprite) => void,
+    logEvent: (label: string, payload?: Record<string, unknown>) => void,
+  ) {
     this.setSprite = setSprite;
+    this.logEvent = logEvent;
     this.leftSynth = new Tone.Synth({
       oscillator: { type: 'sine' },
       envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.05 },
+      // _label is used by test doubles; Tone.Synth ignores unknown props.
+      _label: 'left',
     }).toDestination();
 
     this.rightSynth = new Tone.Synth({
       oscillator: { type: 'triangle' },
       envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.05 },
+      _label: 'right',
     }).toDestination();
-    this.scheduleCycleBound = () => this.scheduleCycle();
+    this.scheduleCycleBound = () => this.scheduleCycle(Tone.Transport.seconds);
   }
 
-  start(sequence: StepSequence) {
-    this.stop();
-    this.currentSequence = sequence;
-    this.running = true;
-    Tone.Transport.cancel();
-
-    this.scheduleCycle();
-    Tone.Transport.start();
-  }
-
-  queueNext(sequence: StepSequence) {
+  applySequence(sequence: StepSequence) {
     if (!this.running) {
-      this.start(sequence);
+      this.startFresh(sequence);
       return;
     }
 
     this.pendingSequence = sequence;
+    this.logEvent('pattern-queued', { pattern: sequence.name });
   }
 
   stop() {
-    if (this.nextCycleId !== null) {
-      Tone.Transport.clear(this.nextCycleId);
-      this.nextCycleId = null;
-    }
-
-    if (this.running) {
-      Tone.Transport.stop();
-      Tone.Transport.cancel();
-    }
-
+    this.resetTransport();
     this.running = false;
     this.pendingSequence = null;
     this.currentSequence = null;
+    this.logEvent('stopped');
   }
 
   dispose() {
@@ -207,35 +208,77 @@ class StepScheduler {
     this.rightSynth.dispose();
   }
 
-  private scheduleCycle() {
+  private startFresh(sequence: StepSequence) {
+    this.resetTransport();
+    this.currentSequence = sequence;
+    this.running = true;
+    this.pendingSequence = null;
+    this.logEvent('pattern-init', { pattern: sequence.name });
+
+    this.scheduleCycle(Tone.Transport.seconds);
+    Tone.Transport.start();
+  }
+
+  private resetTransport() {
+    if (this.nextCycleId !== null) {
+      Tone.Transport.clear(this.nextCycleId);
+      this.nextCycleId = null;
+    }
+    this.clearScheduledActions();
+    Tone.Transport.stop();
+    Tone.Transport.cancel();
+    Tone.Transport.position = 0;
+  }
+
+  private scheduleCycle(cycleStart: number) {
     if (!this.running) return;
 
     if (this.pendingSequence) {
       this.currentSequence = this.pendingSequence;
       this.pendingSequence = null;
+      if (this.currentSequence) {
+        this.logEvent('pattern-init', { pattern: this.currentSequence.name });
+      }
     }
 
     const sequence = this.currentSequence;
     if (!sequence) return;
 
-    const startTime = Tone.Transport.seconds;
-    sequence.actions.forEach((action) => this.executeAction(action, startTime));
-
-    const nextStart = startTime + sequence.duration;
+    this.scheduleActions(sequence, cycleStart);
+    const nextStart = cycleStart + sequence.duration;
     this.nextCycleId = Tone.Transport.scheduleOnce(this.scheduleCycleBound, nextStart);
   }
 
-  private executeAction(action: SequenceAction, cycleStart: number) {
-    const targetTime = cycleStart + action.offset;
+  private scheduleActions(sequence: StepSequence, cycleStart: number) {
+    this.clearScheduledActions();
+    sequence.actions.forEach((action) => {
+      const eventId = Tone.Transport.schedule(
+        (time) => this.executeAction(action, time),
+        cycleStart + action.offset,
+      );
+      this.scheduledActionIds.push(eventId);
+    });
+  }
 
+  private clearScheduledActions() {
+    this.scheduledActionIds.forEach((id) => Tone.Transport.clear(id));
+    this.scheduledActionIds = [];
+  }
+
+  private executeAction(action: SequenceAction, scheduledTime: number) {
     if (action.type === 'tone') {
       const synth = action.foot === 'L' ? this.leftSynth : this.rightSynth;
-      synth.triggerAttackRelease(action.note, 0.08, targetTime);
-      Tone.Draw.schedule(() => this.setSprite(action.foot), targetTime);
+      synth.triggerAttackRelease(action.note, 0.08, scheduledTime);
+      this.logEvent('step', {
+        pattern: this.currentSequence?.name,
+        foot: action.foot,
+        at: scheduledTime,
+      });
+      Tone.Draw.schedule(() => this.setSprite(action.foot), scheduledTime);
       return;
     }
 
-    Tone.Draw.schedule(() => this.setSprite(action.sprite), targetTime);
+    Tone.Draw.schedule(() => this.setSprite(action.sprite), scheduledTime);
   }
 }
 
@@ -256,76 +299,119 @@ const spriteAlt: Record<DisplaySprite, string> = {
 const App = () => {
   const [pattern, setPattern] = useState<PatternKind>('walk');
   const [periodInput, setPeriodInput] = useState(DEFAULT_PERIOD.toFixed(2));
-  const [asymmetryInput, setAsymmetryInput] = useState(DEFAULT_ASYMMETRY.toFixed(2));
+  const [asymmetryInput, setAsymmetryInput] = useState('0.00');
   const [displaySprite, setDisplaySprite] = useState<DisplaySprite>('L');
   const [isPlaying, setIsPlaying] = useState(false);
+
+  const logEvent = useCallback(
+    (label: string, payload?: Record<string, unknown>) => {
+      const stamp = new Date().toISOString();
+      if (payload) {
+        console.log(`[${stamp}] ${label}`, payload);
+      } else {
+        console.log(`[${stamp}] ${label}`);
+      }
+    },
+    [],
+  );
 
   const schedulerRef = useRef<StepScheduler | null>(null);
 
   useEffect(() => {
-    schedulerRef.current = new StepScheduler(setDisplaySprite);
+    schedulerRef.current = new StepScheduler(setDisplaySprite, logEvent);
     return () => schedulerRef.current?.dispose();
-  }, []);
+  }, [logEvent]);
 
   const currentPattern = useMemo(() => PATTERNS[pattern], [pattern]);
 
-  const parsedPeriod = Number.parseFloat(periodInput);
-  const parsedAsymmetry = Number.parseFloat(asymmetryInput);
-  const periodInvalid = !Number.isFinite(parsedPeriod) || parsedPeriod < PERIOD_MIN || parsedPeriod > PERIOD_MAX;
-
   const stopMetronome = () => {
+    logEvent('button', { name: 'stop' });
     schedulerRef.current?.stop();
     setIsPlaying(false);
     setDisplaySprite('L');
   };
 
-  const getEffectiveValues = (kind: PatternKind) => {
-    const period = clampPeriod(Number.isFinite(parsedPeriod) ? parsedPeriod : DEFAULT_PERIOD);
+  const getEffectiveValues = (kind: PatternKind, periodStr = periodInput, asymStr = asymmetryInput) => {
+    const parsedPeriod = Number.parseFloat(periodStr);
+    const parsedAsymmetry = Number.parseFloat(asymStr);
+    const periodInvalid =
+      !Number.isFinite(parsedPeriod) || parsedPeriod < PERIOD_MIN || parsedPeriod > PERIOD_MAX;
+
     const rawAsymmetry =
       Number.isFinite(parsedAsymmetry) && parsedAsymmetry > 0 && parsedAsymmetry < 1
         ? parsedAsymmetry
         : DEFAULT_ASYMMETRY;
     const asymmetry = kind === 'walk' ? 0 : clampAsymmetry(rawAsymmetry);
 
-    const asymmetryInvalid =
+    const asymmetryInvalidForKind =
       kind !== 'walk' &&
       (!Number.isFinite(parsedAsymmetry) || parsedAsymmetry <= 0 || parsedAsymmetry >= 1);
 
     return {
-      period,
+      period: clampPeriod(Number.isFinite(parsedPeriod) ? parsedPeriod : DEFAULT_PERIOD),
       asymmetry,
-      valid: !periodInvalid && !asymmetryInvalid,
+      valid: !periodInvalid && !asymmetryInvalidForKind,
     };
   };
 
-  const { period: effectivePeriod, asymmetry: effectiveAsymmetry } = getEffectiveValues(pattern);
+  const {
+    period: effectivePeriod,
+    asymmetry: effectiveAsymmetry,
+    valid: inputsValid,
+  } = getEffectiveValues(pattern);
 
   const onPatternPress = async (kind: PatternKind) => {
+    logEvent('button', { name: 'select-pattern', pattern: kind });
     setPattern(kind);
     const parsed = Number.parseFloat(asymmetryInput);
+    let nextAsymmetryInput = asymmetryInput;
 
     if (kind === 'walk') {
-      setAsymmetryInput('0.00');
+      nextAsymmetryInput = '0.00';
     } else if (!Number.isFinite(parsed) || parsed <= 0 || parsed >= 1) {
-      setAsymmetryInput(DEFAULT_ASYMMETRY.toFixed(2));
+      nextAsymmetryInput = DEFAULT_ASYMMETRY.toFixed(2);
     }
+    setAsymmetryInput(nextAsymmetryInput);
 
-    const rawAsymmetry =
-      Number.isFinite(parsed) && parsed > 0 && parsed < 1 ? parsed : DEFAULT_ASYMMETRY;
-    const asymmetryValue = kind === 'walk' ? 0 : clampAsymmetry(rawAsymmetry);
-    const periodValue = clampPeriod(Number.isFinite(parsedPeriod) ? parsedPeriod : DEFAULT_PERIOD);
+    const { period: periodValue, asymmetry: asymmetryValue, valid } = getEffectiveValues(
+      kind,
+      periodInput,
+      nextAsymmetryInput,
+    );
 
-    if (!schedulerRef.current) return;
+    if (!schedulerRef.current || !isPlaying || !valid) return;
 
     await Tone.start();
     const sequence = PATTERNS[kind].build(periodValue, asymmetryValue);
-    schedulerRef.current.queueNext(sequence);
-    setIsPlaying(true);
+    schedulerRef.current.applySequence(sequence);
     setDisplaySprite('L');
 
     // Update input boxes to reflect any fallbacks/clamps we applied.
     setPeriodInput(periodValue.toFixed(2));
     setAsymmetryInput(asymmetryValue.toFixed(2));
+  };
+
+  const handleApply = async () => {
+    logEvent('button', {
+      name: 'apply',
+      pattern,
+      period: periodInput,
+      asymmetry: asymmetryInput,
+    });
+
+    if (!schedulerRef.current) return;
+
+    const { period, asymmetry, valid } = getEffectiveValues(pattern);
+    if (!valid) return;
+
+    await Tone.start();
+    const sequence = PATTERNS[pattern].build(period, asymmetry);
+    schedulerRef.current.applySequence(sequence);
+    setIsPlaying(true);
+    setDisplaySprite('L');
+
+    setPeriodInput(period.toFixed(2));
+    setAsymmetryInput(asymmetry.toFixed(2));
   };
 
   return (
@@ -351,13 +437,11 @@ const App = () => {
           <p className="section-title">Select pattern</p>
           <div className="pattern-buttons">
             {(Object.values(PATTERNS) as PatternDefinition[]).map((item) => {
-              const disabled = periodInvalid;
               return (
                 <button
                   key={item.kind}
                   className={pattern === item.kind ? 'active' : ''}
                   onClick={() => onPatternPress(item.kind)}
-                  disabled={disabled}
                 >
                   {item.label}
                 </button>
@@ -402,6 +486,9 @@ const App = () => {
         </section>
 
         <section className="controls">
+          <button className="start" onClick={handleApply} disabled={!inputsValid}>
+            Apply
+          </button>
           <button className="stop" onClick={stopMetronome} disabled={!isPlaying}>
             Stop
           </button>

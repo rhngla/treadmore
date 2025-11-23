@@ -419,7 +419,7 @@ const App = () => {
         <header>
           <p className="eyebrow">Metronome</p>
           <h1>TreadMore</h1>
-          <p className="lede">Cue different stepping patterns with Tone.js</p>
+          <p className="lede">Cues for different gait patterns</p>
         </header>
 
         <section className="beat-indicators">
@@ -433,7 +433,7 @@ const App = () => {
         </section>
 
         <section className="pattern-selector">
-          <p className="section-title">Select pattern</p>
+          <p className="section-title">Pattern</p>
           <div className="pattern-buttons">
             {(Object.values(PATTERNS) as PatternDefinition[]).map((item) => {
               return (
@@ -462,7 +462,7 @@ const App = () => {
               onChange={(event) => setPeriodInput(event.target.value)}
             />
             <p className="hint">
-              Allowed: {PERIOD_MIN.toFixed(2)} – {PERIOD_MAX.toFixed(2)}s
+              Range: ({PERIOD_MIN.toFixed(2)}, {PERIOD_MAX.toFixed(2)})
             </p>
           </div>
 
@@ -480,7 +480,7 @@ const App = () => {
               onChange={(event) => setAsymmetryInput(event.target.value)}
               disabled={pattern === 'walk'}
             />
-            <p className="hint">Use values in (0, 1)</p>
+            <p className="hint">Range: (0, 1)</p>
           </div>
         </section>
 
@@ -499,7 +499,7 @@ const App = () => {
             {effectivePeriod.toFixed(2)}s · Asymmetry {effectiveAsymmetry.toFixed(2)}
           </p>
           <p className="status note">
-            Interval switch capped at {INTERVAL_SWITCH_CAP.toFixed(2)}s and recalculated per pattern.
+            Updated: &mdash; Nov 2025
           </p>
         </footer>
       </div>

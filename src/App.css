@@ -3,15 +3,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 2rem 1.5rem;
-  background: #fef5ed;
+  padding: 2.5rem 1.25rem;
+  background: radial-gradient(circle at 20% 20%, #f5e7d9 0, transparent 30%),
+    radial-gradient(circle at 80% 0%, #e5d9f2 0, transparent 24%),
+    #fef5ed;
 }
 
 .metronome-card {
-  width: min(420px, 100%);
+  width: min(460px, 100%);
   background: #fffdf8;
-  border-radius: 32px;
-  padding: 2.5rem 2rem;
+  border-radius: 28px;
+  padding: 2.4rem 2rem;
   box-shadow: 0 30px 60px rgba(61, 47, 42, 0.15);
   border: 1px solid #f2e5d6;
   display: flex;
@@ -29,6 +31,12 @@
   color: #3d2f2a;
 }
 
+.lede {
+  margin: 0.4rem 0 0;
+  color: #7b6c64;
+  font-size: 0.95rem;
+}
+
 .eyebrow {
   text-transform: uppercase;
   letter-spacing: 0.2em;
@@ -40,146 +48,140 @@
 .beat-indicators {
   display: flex;
   justify-content: center;
-  gap: 1.25rem;
 }
 
 .beat-dot {
-  width: 8rem;
-  height: 8rem;
+  width: 7.5rem;
+  height: 7.5rem;
   border-radius: 999px;
-  border: 4px solid #d4c4b8;
-  background: #f5f1e8;
+  border: 3px solid #d4c4b8;
+  background: linear-gradient(140deg, #f7f1e7 0%, #f1e7de 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #3d2f2a;
-  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease,
-    background 120ms ease;
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
 }
 
 .beat-sprite {
-  width: 90%;
-  height: 90%;
+  width: 86%;
+  height: 86%;
   object-fit: contain;
 }
 
 .beat-dot.active {
-  transform: scale(1.08);
+  transform: scale(1.05);
+  border-color: #c4938f;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.1);
 }
 
-.pattern-display {
-  background: #f8f1ea;
-  border: 2px solid #e5ddd0;
-  border-radius: 20px;
-  padding: 1.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.pattern-row {
-  display: flex;
-  justify-content: space-between;
+.section-title {
+  margin: 0 0 0.4rem;
   font-size: 0.95rem;
   color: #6b5d56;
+  font-weight: 700;
 }
 
-.pattern-row strong {
-  font-family: 'Space Mono', 'Inter', system-ui, sans-serif;
-  font-size: 0.8rem;
-  color: #3d2f2a;
-  font-weight: 200;
-}
-
-.slider-control {
-  margin-top: 0.9rem;
+.pattern-selector {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
+  gap: 0.4rem;
 }
 
-.slider-header {
+.pattern-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 0.5rem;
+}
+
+.pattern-buttons button {
+  border: 1px solid #e4d9c8;
+  background: #f8f1ea;
+  color: #3d2f2a;
+  border-radius: 12px;
+  padding: 0.7rem 0.5rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 120ms ease, transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+
+.pattern-buttons button.active {
+  background: #d9c6f0;
+  border-color: #b39ad8;
+  box-shadow: 0 6px 18px rgba(179, 154, 216, 0.35);
+}
+
+.pattern-buttons button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.inputs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.field {
   display: flex;
-  justify-content: space-between;
-  font-size: 0.85rem;
-  color: #6b5d56;
-  font-weight: 600;
+  flex-direction: column;
+  gap: 0.3rem;
+  background: #f8f1ea;
+  border: 1px solid #e5ddd0;
+  border-radius: 16px;
+  padding: 0.85rem 0.9rem;
 }
 
-.slider-value {
-  font-family: 'Space Mono', 'Inter', system-ui, sans-serif;
+.field label {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: #554840;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.field input {
+  border: 1px solid #d4c4b8;
+  background: #fff;
+  border-radius: 12px;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.95rem;
+  font-weight: 600;
   color: #3d2f2a;
 }
 
-.slider-control input[type='range'] {
-  width: 100%;
-  appearance: none;
-  height: 0.45rem;
-  border-radius: 999px;
-  background: #e5ddd0;
-  position: relative;
-  overflow: hidden;
+.field input:disabled {
+  background: #f2ece4;
+  color: #9b8f85;
 }
 
-.slider-control input[type='range']::-webkit-slider-thumb {
-  appearance: none;
-  width: 1.1rem;
-  height: 1.1rem;
-  border-radius: 50%;
-  background: #c4938f;
-  box-shadow: 0 0 0 3px #fffdf8;
-  cursor: pointer;
-  border: 2px solid #d4c4b8;
+.hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #9b8f85;
 }
 
-.slider-control input[type='range']::-moz-range-thumb {
-  width: 1.1rem;
-  height: 1.1rem;
-  border-radius: 50%;
-  background: #c4938f;
-  border: 2px solid #d4c4b8;
-  box-shadow: 0 0 0 3px #fffdf8;
-  cursor: pointer;
-}
-
-.slider-control input[type='range']::-moz-range-track {
-  height: 0.45rem;
-  border-radius: 999px;
-  background: #e5ddd0;
-}
-
-.slider-scale {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.7rem;
-  color: #b18a7a;
+.tag {
+  font-size: 0.75rem;
   text-transform: uppercase;
+  background: #e5d9f2;
+  color: #6a588b;
+  padding: 0.1rem 0.4rem;
+  border-radius: 8px;
   letter-spacing: 0.05em;
 }
 
-.pattern-display .queued {
-  margin-top: 0.5rem;
-  padding-top: 0.5rem;
-  border-top: 1px dashed #e0d3c5;
-  color: #c4938f;
-  font-weight: 600;
-  font-size: 0.85rem;
-}
-
 .controls {
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
 }
 
 .controls button {
   border: none;
-  border-radius: 18px;
-  padding: 1.1rem;
-  font-size: 1.05rem;
-  font-weight: 700;
+  border-radius: 14px;
+  padding: 0.9rem;
+  font-size: 0.95rem;
+  font-weight: 800;
   color: #fff;
   cursor: pointer;
   transition: transform 100ms ease, box-shadow 100ms ease, opacity 150ms ease;
@@ -191,40 +193,47 @@
 }
 
 .controls button:hover:not(:disabled) {
-  transform: translateY(-2px);
+  transform: translateY(-1px);
   box-shadow: 0 12px 20px rgba(0, 0, 0, 0.08);
 }
 
 .controls button.start {
-  background: #a8b5a0;
+  background: #7cb39c;
 }
 
 .controls button.stop {
   background: #c4938f;
 }
 
-.controls button.randomize {
-  background: #e5b299;
-}
-
-.controls button.symmetric {
-  background: #b5a8c4;
-}
-
 footer {
   text-align: center;
   font-size: 0.9rem;
   color: #8b7d76;
-  line-height: 1.4;
+  line-height: 1.5;
+  display: grid;
+  gap: 0.35rem;
 }
 
-@media (max-width: 480px) {
+.status {
+  margin: 0;
+}
+
+.status strong {
+  font-weight: 800;
+}
+
+.note {
+  font-size: 0.82rem;
+  color: #9b8f85;
+}
+
+@media (max-width: 520px) {
   .metronome-card {
-    padding: 2rem 1.5rem;
+    padding: 2rem 1.4rem;
   }
 
   .beat-dot {
-    width: 7rem;
-    height: 7rem;
+    width: 6.75rem;
+    height: 6.75rem;
   }
 }

@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
-import type { ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as Tone from 'tone';
 import leftSprite from './assets/L.png';
 import rightSprite from './assets/R.png';
@@ -7,237 +6,291 @@ import leftJumpSprite from './assets/Lj.png';
 import rightJumpSprite from './assets/Rj.png';
 import './App.css';
 
-type Pattern = {
-  period: number;
-  as: number;
+type Foot = 'L' | 'R';
+type DisplaySprite = 'L' | 'R' | 'Lj' | 'Rj';
+type PatternKind = 'walk' | 'skip' | 'gallop';
+
+type SequenceAction =
+  | { type: 'tone'; offset: number; foot: Foot; note: string }
+  | { type: 'sprite'; offset: number; sprite: DisplaySprite };
+
+type StepSequence = {
+  duration: number;
+  actions: SequenceAction[];
 };
 
-type DisplaySprite = 'L' | 'R' | 'Lj' | 'Rj';
+interface PatternDefinition {
+  kind: PatternKind;
+  label: string;
+  build: (period: number, asymmetry: number) => StepSequence;
+}
 
-const PERIOD_MIN = 0.25;
-const PERIOD_MAX = 1.25;
-const PERIOD_STEP = 0.01;
-const ASYMMETRY_MIN = -1;
-const ASYMMETRY_MAX = 1;
-const ASYMMETRY_STEP = 0.05;
-const DEFAULT_PATTERN: Pattern = { period: 1.0, as: 0.0 };
-const ROUNDS_BEFORE_SWITCH = 3;
+const PERIOD_MIN = 0.5;
+const PERIOD_MAX = 2.0;
+const DEFAULT_PERIOD = 1.0;
+const DEFAULT_ASYMMETRY = 0.5;
+const ASYMMETRY_EPSILON = 0.001;
+const INTERVAL_SWITCH_CAP = 0.1;
+const LEFT_NOTE = 'C5';
+const RIGHT_NOTE = 'E5';
 
-const App = () => {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentPattern, setCurrentPattern] = useState<Pattern>(DEFAULT_PATTERN);
-  const [queuedPattern, setQueuedPattern] = useState<Pattern | null>(null);
-  const [displaySprite, setDisplaySprite] = useState<DisplaySprite>('L');
-  const [periodSetting, setPeriodSetting] = useState(DEFAULT_PATTERN.period);
-  const [asymmetrySetting, setAsymmetrySetting] = useState(DEFAULT_PATTERN.as);
+const clampPeriod = (value: number) =>
+  Math.min(PERIOD_MAX, Math.max(PERIOD_MIN, value));
 
-  const synthRef = useRef<Tone.Synth | null>(null);
-  const loopRef = useRef<Tone.Loop | null>(null);
-  const nextBeatTimeRef = useRef(0);
-  const currentPatternRef = useRef<Pattern>(DEFAULT_PATTERN);
-  const queuedPatternRef = useRef<Pattern | null>(null);
-  const nextFootRef = useRef<'L' | 'R'>('L');
-  const roundsUntilSwitchRef = useRef(0);
+const clampAsymmetry = (value: number) => {
+  const lower = ASYMMETRY_EPSILON;
+  const upper = 1 - ASYMMETRY_EPSILON;
+  return Math.min(upper, Math.max(lower, value));
+};
 
-  useEffect(() => {
-    synthRef.current = new Tone.Synth({
+const minSwitch = (...intervals: number[]) =>
+  Math.min(INTERVAL_SWITCH_CAP, ...intervals.map((i) => i / 3));
+
+class WalkJogPattern implements PatternDefinition {
+  kind: PatternKind = 'walk';
+  label = 'Walk/Jog';
+
+  build(period: number, _asymmetry: number): StepSequence {
+    const safePeriod = clampPeriod(period);
+    const intervalLR = safePeriod / 2;
+    const intervalRL = intervalLR;
+    const intervalSwitch = minSwitch(intervalLR, intervalRL);
+
+    const actions: SequenceAction[] = [
+      { type: 'tone', offset: 0, foot: 'L', note: LEFT_NOTE },
+      { type: 'sprite', offset: intervalSwitch, sprite: 'Lj' },
+      { type: 'tone', offset: intervalLR, foot: 'R', note: RIGHT_NOTE },
+      { type: 'sprite', offset: intervalLR + intervalSwitch, sprite: 'Rj' },
+    ];
+
+    return { duration: intervalLR + intervalRL, actions };
+  }
+}
+
+class SkipPattern implements PatternDefinition {
+  kind: PatternKind = 'skip';
+  label = 'Skip';
+
+  build(period: number, asymmetry: number): StepSequence {
+    const safePeriod = clampPeriod(period);
+    const as = clampAsymmetry(asymmetry);
+
+    const intervalRR = (safePeriod / 2) * as;
+    const intervalRL = safePeriod * (1 - as / 2);
+    const intervalLL = intervalRR;
+    const intervalLR = intervalRL;
+
+    const intervalSwitch = minSwitch(intervalLL, intervalRR, intervalLR, intervalRL);
+
+    const t0 = 0;
+    const t1 = t0 + intervalSwitch;
+    const t2 = t0 + intervalLR;
+    const t3 = t2 + intervalSwitch;
+    const t4 = t2 + intervalRR;
+    const t5 = t4 + intervalSwitch;
+    const t6 = t4 + intervalRL;
+    const t7 = t6 + intervalSwitch;
+    const duration = t6 + intervalLL;
+
+    const actions: SequenceAction[] = [
+      { type: 'tone', offset: t0, foot: 'L', note: LEFT_NOTE },
+      { type: 'sprite', offset: t1, sprite: 'Lj' },
+      { type: 'tone', offset: t2, foot: 'R', note: RIGHT_NOTE },
+      { type: 'sprite', offset: t3, sprite: 'Rj' },
+      { type: 'tone', offset: t4, foot: 'R', note: RIGHT_NOTE },
+      { type: 'sprite', offset: t5, sprite: 'Rj' },
+      { type: 'tone', offset: t6, foot: 'L', note: LEFT_NOTE },
+      { type: 'sprite', offset: t7, sprite: 'Lj' },
+    ];
+
+    return { duration, actions };
+  }
+}
+
+class GallopPattern implements PatternDefinition {
+  kind: PatternKind = 'gallop';
+  label = 'Gallop';
+
+  build(period: number, asymmetry: number): StepSequence {
+    const safePeriod = clampPeriod(period);
+    const as = clampAsymmetry(asymmetry);
+
+    const intervalRL = (safePeriod / 2) * as;
+    const intervalLR = safePeriod * (1 - as / 2);
+    const intervalSwitch = minSwitch(intervalLR, intervalRL);
+
+    const actions: SequenceAction[] = [
+      { type: 'tone', offset: 0, foot: 'L', note: LEFT_NOTE },
+      { type: 'sprite', offset: intervalSwitch, sprite: 'Lj' },
+      { type: 'tone', offset: intervalLR, foot: 'R', note: RIGHT_NOTE },
+      { type: 'sprite', offset: intervalLR + intervalSwitch, sprite: 'Rj' },
+    ];
+
+    return { duration: intervalLR + intervalRL, actions };
+  }
+}
+
+const PATTERNS: Record<PatternKind, PatternDefinition> = {
+  walk: new WalkJogPattern(),
+  skip: new SkipPattern(),
+  gallop: new GallopPattern(),
+};
+
+class StepScheduler {
+  private loopId: number | null = null;
+  private running = false;
+  private sequence: StepSequence | null = null;
+  private leftSynth: Tone.Synth;
+  private rightSynth: Tone.Synth;
+  private setSprite: (sprite: DisplaySprite) => void;
+
+  constructor(setSprite: (sprite: DisplaySprite) => void) {
+    this.setSprite = setSprite;
+    this.leftSynth = new Tone.Synth({
       oscillator: { type: 'sine' },
-      envelope: {
-        attack: 0.001,
-        decay: 0.05,
-        sustain: 0,
-        release: 0.05,
-      },
+      envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.05 },
     }).toDestination();
 
-    return () => {
-      Tone.Transport.cancel();
-      Tone.Transport.stop();
-      synthRef.current?.dispose();
-      loopRef.current?.dispose();
-    };
-  }, []);
+    this.rightSynth = new Tone.Synth({
+      oscillator: { type: 'triangle' },
+      envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.05 },
+    }).toDestination();
+  }
 
-  const calculateBeatTimes = (pattern: Pattern) => {
-    const { period, as } = pattern;
-    return [0, period * 0.5 * (1 + as), period];
-  };
-
-  const spriteSources: Record<DisplaySprite, string> = {
-    L: leftSprite,
-    R: rightSprite,
-    Lj: leftJumpSprite,
-    Rj: rightJumpSprite,
-  };
-
-  const spriteAlt: Record<DisplaySprite, string> = {
-    L: 'Left step',
-    R: 'Right step',
-    Lj: 'Jump between left and right',
-    Rj: 'Jump between right and left',
-  };
-
-  const schedulePattern = (pattern: Pattern, startTime: number) => {
-    const beatTimes = calculateBeatTimes(pattern);
-    const scheduledFeet: Array<'L' | 'R'> = [];
-
-    beatTimes.forEach((beatOffset, index) => {
-      const absoluteTime = startTime + beatOffset;
-      const footForBeat = nextFootRef.current;
-      nextFootRef.current = footForBeat === 'L' ? 'R' : 'L';
-      scheduledFeet.push(footForBeat);
-
-      Tone.Transport.schedule((time) => {
-        synthRef.current?.triggerAttackRelease(
-          index === 0 ? 'C5' : 'C4',
-          '32n',
-          time,
-        );
-
-        Tone.Draw.schedule(() => {
-          setDisplaySprite(footForBeat);
-        }, time);
-      }, absoluteTime);
-    });
-
-    beatTimes.slice(0, -1).forEach((beatOffset, index) => {
-      const midpointOffset = (beatOffset + beatTimes[index + 1]) / 2;
-      const midpointTime = startTime + midpointOffset;
-      const precedingFoot = scheduledFeet[index];
-
-      Tone.Transport.schedule((time) => {
-        Tone.Draw.schedule(() => {
-          setDisplaySprite(precedingFoot === 'L' ? 'Lj' : 'Rj');
-        }, time);
-      }, midpointTime);
-    });
-
-    return startTime + pattern.period;
-  };
-
-  const scheduleNextLoop = (_time?: number) => {
-    let patternToPlay = currentPatternRef.current;
-
-    if (queuedPatternRef.current) {
-      if (roundsUntilSwitchRef.current <= 0) {
-        currentPatternRef.current = queuedPatternRef.current;
-        patternToPlay = queuedPatternRef.current;
-        setCurrentPattern(queuedPatternRef.current);
-        queuedPatternRef.current = null;
-        setQueuedPattern(null);
-        roundsUntilSwitchRef.current = 0;
-
-        loopRef.current?.dispose();
-        loopRef.current = new Tone.Loop(scheduleNextLoop, currentPatternRef.current.period);
-        loopRef.current.start(nextBeatTimeRef.current);
-      } else {
-        roundsUntilSwitchRef.current -= 1;
-      }
-    }
-
-    nextBeatTimeRef.current = schedulePattern(patternToPlay, nextBeatTimeRef.current);
-  };
-
-  const startMetronome = async () => {
-    await Tone.start();
-
-    if (isPlaying) return;
-
-    setIsPlaying(true);
+  start(sequence: StepSequence) {
+    this.stop();
+    this.sequence = sequence;
+    this.running = true;
     Tone.Transport.cancel();
 
-    currentPatternRef.current = currentPattern;
-    queuedPatternRef.current = null;
-    setQueuedPattern(null);
-    nextFootRef.current = 'L';
-    roundsUntilSwitchRef.current = 0;
-    setDisplaySprite('L');
+    this.loopId = Tone.Transport.scheduleRepeat(
+      (time) => {
+        if (!this.running || !this.sequence) return;
+        this.sequence.actions.forEach((action) => this.executeAction(action, time));
+      },
+      sequence.duration,
+      0,
+    );
 
     Tone.Transport.start();
+  }
 
-    const startTime = Tone.Transport.seconds;
-    nextBeatTimeRef.current = schedulePattern(currentPattern, startTime);
+  stop() {
+    if (this.loopId !== null) {
+      Tone.Transport.clear(this.loopId);
+      this.loopId = null;
+    }
 
-    loopRef.current?.dispose();
-    loopRef.current = new Tone.Loop(scheduleNextLoop, currentPattern.period);
-    loopRef.current.start(nextBeatTimeRef.current);
+    if (this.running) {
+      Tone.Transport.stop();
+      Tone.Transport.cancel();
+    }
+
+    this.running = false;
+  }
+
+  dispose() {
+    this.stop();
+    this.leftSynth.dispose();
+    this.rightSynth.dispose();
+  }
+
+  private executeAction(action: SequenceAction, cycleStart: number) {
+    const targetTime = cycleStart + action.offset;
+
+    if (action.type === 'tone') {
+      const synth = action.foot === 'L' ? this.leftSynth : this.rightSynth;
+      synth.triggerAttackRelease(action.note, 0.08, targetTime);
+      Tone.Draw.schedule(() => this.setSprite(action.foot), targetTime);
+      return;
+    }
+
+    Tone.Draw.schedule(() => this.setSprite(action.sprite), targetTime);
+  }
+}
+
+const spriteSources: Record<DisplaySprite, string> = {
+  L: leftSprite,
+  R: rightSprite,
+  Lj: leftJumpSprite,
+  Rj: rightJumpSprite,
+};
+
+const spriteAlt: Record<DisplaySprite, string> = {
+  L: 'Left step',
+  R: 'Right step',
+  Lj: 'Jump between left and right',
+  Rj: 'Jump between right and left',
+};
+
+const App = () => {
+  const [pattern, setPattern] = useState<PatternKind>('walk');
+  const [periodInput, setPeriodInput] = useState(DEFAULT_PERIOD.toFixed(2));
+  const [asymmetryInput, setAsymmetryInput] = useState('0.00');
+  const [displaySprite, setDisplaySprite] = useState<DisplaySprite>('L');
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  const schedulerRef = useRef<StepScheduler | null>(null);
+
+  useEffect(() => {
+    schedulerRef.current = new StepScheduler(setDisplaySprite);
+    return () => schedulerRef.current?.dispose();
+  }, []);
+
+  const currentPattern = useMemo(() => PATTERNS[pattern], [pattern]);
+
+  const parsedPeriod = Number.parseFloat(periodInput);
+  const parsedAsymmetry = Number.parseFloat(asymmetryInput);
+  const periodInvalid = !Number.isFinite(parsedPeriod) || parsedPeriod < PERIOD_MIN || parsedPeriod > PERIOD_MAX;
+  const asymmetryInvalid =
+    pattern !== 'walk' &&
+    (!Number.isFinite(parsedAsymmetry) || parsedAsymmetry <= 0 || parsedAsymmetry >= 1);
+  const canPlay = !periodInvalid && !asymmetryInvalid;
+
+  const effectivePeriod = clampPeriod(Number.isFinite(parsedPeriod) ? parsedPeriod : DEFAULT_PERIOD);
+  const effectiveAsymmetry =
+    pattern === 'walk'
+      ? 0
+      : clampAsymmetry(Number.isFinite(parsedAsymmetry) ? parsedAsymmetry : DEFAULT_ASYMMETRY);
+
+  const startMetronome = async () => {
+    if (!canPlay || !schedulerRef.current) return;
+
+    await Tone.start();
+    const sequence = currentPattern.build(effectivePeriod, effectiveAsymmetry);
+    schedulerRef.current.start(sequence);
+    setIsPlaying(true);
+    setDisplaySprite('L');
   };
 
   const stopMetronome = () => {
-    if (!isPlaying) return;
-
+    schedulerRef.current?.stop();
     setIsPlaying(false);
-    Tone.Transport.stop();
-    Tone.Transport.cancel();
-    loopRef.current?.stop();
-    loopRef.current?.dispose();
-    loopRef.current = null;
-
-    setQueuedPattern(null);
-    queuedPatternRef.current = null;
-    nextFootRef.current = 'L';
-    roundsUntilSwitchRef.current = 0;
     setDisplaySprite('L');
   };
 
-  const queuePattern = (pattern: Pattern) => {
-    if (isPlaying) {
-      queuedPatternRef.current = pattern;
-      setQueuedPattern(pattern);
-      roundsUntilSwitchRef.current = ROUNDS_BEFORE_SWITCH;
-    } else {
-      queuedPatternRef.current = null;
-      setQueuedPattern(null);
-      currentPatternRef.current = pattern;
-      setCurrentPattern(pattern);
-      roundsUntilSwitchRef.current = 0;
+  const onPatternSelect = (kind: PatternKind) => {
+    setPattern(kind);
+    const parsed = Number.parseFloat(asymmetryInput);
+
+    if (kind === 'walk') {
+      setAsymmetryInput('0.00');
+    } else if (!Number.isFinite(parsed) || parsed <= 0 || parsed >= 1) {
+      setAsymmetryInput(DEFAULT_ASYMMETRY.toFixed(2));
     }
-  };
 
-  const randomizePattern = () => {
-    const randomPeriod = Math.random() * (PERIOD_MAX - PERIOD_MIN) + PERIOD_MIN;
-    const randomAsymmetry =
-      Math.random() * (ASYMMETRY_MAX - ASYMMETRY_MIN) + ASYMMETRY_MIN;
-    const nextPeriod = parseFloat(randomPeriod.toFixed(2));
-    const nextAsymmetry = parseFloat(randomAsymmetry.toFixed(2));
-    const newPattern: Pattern = {
-      period: nextPeriod,
-      as: nextAsymmetry,
-    };
-
-    setPeriodSetting(nextPeriod);
-    setAsymmetrySetting(nextAsymmetry);
-    queuePattern(newPattern);
-  };
-
-  const queueSymmetric = () => {
-    const symmetricPattern: Pattern = {
-      period: periodSetting,
-      as: 0.0,
-    };
-
-    setAsymmetrySetting(0);
-    queuePattern(symmetricPattern);
-  };
-
-  const handlePeriodChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const nextPeriod = parseFloat(event.target.value);
-    setPeriodSetting(nextPeriod);
-    queuePattern({ period: nextPeriod, as: asymmetrySetting });
-  };
-
-  const handleAsymmetryChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const nextAsymmetry = parseFloat(event.target.value);
-    setAsymmetrySetting(nextAsymmetry);
-    queuePattern({ period: periodSetting, as: nextAsymmetry });
+    if (isPlaying) {
+      stopMetronome();
+    }
   };
 
   return (
     <div className="app-shell">
       <div className="metronome-card">
         <header>
-          <p className="eyebrow">prototype</p>
+          <p className="eyebrow">Metronome</p>
           <h1>TreadMore</h1>
+          <p className="lede">Cue different stepping patterns with Tone.js</p>
         </header>
 
         <section className="beat-indicators">
@@ -249,69 +302,74 @@ const App = () => {
             />
           </div>
         </section>
-        <section className="pattern-display">
-          <div className="slider-control">
-            <div className="slider-header">
-              <span>Period</span>
-              <span className="slider-value">{periodSetting.toFixed(2)}s</span>
-            </div>
+
+        <section className="pattern-selector">
+          <p className="section-title">Select pattern</p>
+          <div className="pattern-buttons">
+            {(Object.values(PATTERNS) as PatternDefinition[]).map((item) => (
+              <button
+                key={item.kind}
+                className={pattern === item.kind ? 'active' : ''}
+                onClick={() => onPatternSelect(item.kind)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="inputs">
+          <div className="field">
+            <label htmlFor="period">Period (seconds)</label>
             <input
-              type="range"
+              id="period"
+              type="number"
               min={PERIOD_MIN}
               max={PERIOD_MAX}
-              step={PERIOD_STEP}
-              value={periodSetting}
-              onChange={handlePeriodChange}
+              step={0.01}
+              value={periodInput}
+              onChange={(event) => setPeriodInput(event.target.value)}
             />
-            <div className="slider-scale">
-              <span>{PERIOD_MIN.toFixed(2)}s</span>
-              <span>{PERIOD_MAX.toFixed(2)}s</span>
-            </div>
-          </div>
-
-          <div className="slider-control">
-            <div className="slider-header">
-              <span>Asymmetry</span>
-              <span className="slider-value">{asymmetrySetting.toFixed(2)}</span>
-            </div>
-            <input
-              type="range"
-              min={ASYMMETRY_MIN}
-              max={ASYMMETRY_MAX}
-              step={ASYMMETRY_STEP}
-              value={asymmetrySetting}
-              onChange={handleAsymmetryChange}
-            />
-            <div className="slider-scale">
-              <span>Symmetric</span>
-              <span>Asymmetric</span>
-            </div>
-          </div>
-
-          {queuedPattern && (
-            <p className="queued">
-              Coming up: Period {queuedPattern.period.toFixed(2)} s, Asymmetry {queuedPattern.as.toFixed(2)}
+            <p className="hint">
+              Allowed: {PERIOD_MIN.toFixed(2)} – {PERIOD_MAX.toFixed(2)}s
             </p>
-          )}
+          </div>
+
+          <div className="field">
+            <label htmlFor="asymmetry">
+              Asymmetry {pattern === 'walk' && <span className="tag">locked</span>}
+            </label>
+            <input
+              id="asymmetry"
+              type="number"
+              min={ASYMMETRY_EPSILON}
+              max={1 - ASYMMETRY_EPSILON}
+              step={0.01}
+              value={asymmetryInput}
+              onChange={(event) => setAsymmetryInput(event.target.value)}
+              disabled={pattern === 'walk'}
+            />
+            <p className="hint">Use values in (0, 1)</p>
+          </div>
         </section>
 
         <section className="controls">
-          <button
-            className={isPlaying ? 'stop' : 'start'}
-            onClick={isPlaying ? stopMetronome : startMetronome}
-          >
-            {isPlaying ? 'Stop' : 'Start'}
+          <button className="start" onClick={startMetronome} disabled={!canPlay || isPlaying}>
+            Play
           </button>
-          <button className="randomize" onClick={randomizePattern}>
-            Skip/Gallop
-          </button>
-          <button className="symmetric" onClick={queueSymmetric}>
-            Walk/Run
+          <button className="stop" onClick={stopMetronome} disabled={!isPlaying}>
+            Stop
           </button>
         </section>
 
         <footer>
-          Tap Start to begin. Try to match your steps to the beat.
+          <p className="status">
+            Pattern: <strong>{currentPattern.label}</strong> · Period{' '}
+            {effectivePeriod.toFixed(2)}s · Asymmetry {effectiveAsymmetry.toFixed(2)}
+          </p>
+          <p className="status note">
+            Interval switch capped at {INTERVAL_SWITCH_CAP.toFixed(2)}s and recalculated per pattern.
+          </p>
         </footer>
       </div>
     </div>

@@ -126,8 +126,8 @@ class GallopPattern implements PatternDefinition {
     const safePeriod = clampPeriod(period);
     const as = clampAsymmetry(asymmetry);
 
-    const intervalRL = (safePeriod / 2) * as;
-    const intervalLR = safePeriod * (1 - as / 2);
+    const intervalRL = safePeriod * as;
+    const intervalLR = safePeriod * (1 - as);
     const intervalSwitch = minSwitch(intervalLR, intervalRL);
 
     const actions: SequenceAction[] = [

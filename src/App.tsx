@@ -172,15 +172,14 @@ class StepScheduler {
     this.leftSynth = new Tone.Synth({
       oscillator: { type: 'sine' },
       envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.05 },
-      // _label is used by test doubles; Tone.Synth ignores unknown props.
-      _label: 'left',
     }).toDestination();
+    (this.leftSynth as unknown as { _label?: string })._label = 'left';
 
     this.rightSynth = new Tone.Synth({
       oscillator: { type: 'triangle' },
       envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.05 },
-      _label: 'right',
     }).toDestination();
+    (this.rightSynth as unknown as { _label?: string })._label = 'right';
     this.scheduleCycleBound = () => this.scheduleCycle(Tone.Transport.seconds);
   }
 

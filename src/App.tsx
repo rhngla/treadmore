@@ -32,6 +32,7 @@ const DEFAULT_PERIOD = 1.0;
 const DEFAULT_ASYMMETRY = 0.5;
 const ASYMMETRY_EPSILON = 0.001;
 const INTERVAL_SWITCH_CAP = 0.1;
+const SCHEDULER_LOOKAHEAD = 0.1; // 100ms lookahead for precise timing
 const LEFT_NOTE = 'C5';
 const RIGHT_NOTE = 'E5';
 
@@ -161,7 +162,6 @@ class StepScheduler {
   private rightSynth: Tone.Synth;
   private setSprite: (sprite: DisplaySprite) => void;
   private logEvent: (label: string, payload?: Record<string, unknown>) => void;
-  private scheduleCycleBound: (time: number) => void;
 
   constructor(
     setSprite: (sprite: DisplaySprite) => void,
@@ -180,7 +180,6 @@ class StepScheduler {
       envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.05 },
     }).toDestination();
     (this.rightSynth as unknown as { _label?: string })._label = 'right';
-    this.scheduleCycleBound = () => this.scheduleCycle(Tone.Transport.seconds);
   }
 
   applySequence(sequence: StepSequence) {
@@ -214,8 +213,9 @@ class StepScheduler {
     this.pendingSequence = null;
     this.logEvent('pattern-init', { pattern: sequence.name });
 
-    this.scheduleCycle(Tone.Transport.seconds);
     Tone.Transport.start();
+    // Start the first cycle exactly at Transport time 0
+    this.scheduleCycle(0);
   }
 
   private resetTransport() {
@@ -229,9 +229,10 @@ class StepScheduler {
     Tone.Transport.position = 0;
   }
 
-  private scheduleCycle(cycleStart: number) {
+  private scheduleCycle(cycleStartTime: number) {
     if (!this.running) return;
 
+    // 1. Swap pattern if pending
     if (this.pendingSequence) {
       this.currentSequence = this.pendingSequence;
       this.pendingSequence = null;
@@ -243,13 +244,25 @@ class StepScheduler {
     const sequence = this.currentSequence;
     if (!sequence) return;
 
-    this.scheduleActions(sequence, cycleStart);
-    const nextStart = cycleStart + sequence.duration;
-    this.nextCycleId = Tone.Transport.scheduleOnce(this.scheduleCycleBound, nextStart);
+    // 2. Schedule current cycle events relative to the passed start time
+    this.scheduleActions(sequence, cycleStartTime);
+
+    // 3. Calculate when the NEXT cycle physically starts
+    const nextCycleStart = cycleStartTime + sequence.duration;
+
+    // 4. Wake up 'LOOKAHEAD' seconds before the next cycle to plan it
+    // We use Math.max(0) to ensure we don't schedule in the past
+    const scheduleNextPlanningAt = Math.max(0, nextCycleStart - SCHEDULER_LOOKAHEAD);
+
+    this.nextCycleId = Tone.Transport.scheduleOnce(() => {
+      this.scheduleCycle(nextCycleStart);
+    }, scheduleNextPlanningAt);
   }
 
   private scheduleActions(sequence: StepSequence, cycleStart: number) {
-    this.clearScheduledActions();
+    // Note: We do not clearScheduledActions() here anymore because
+    // we might be "overlapping" with the end of the previous cycle.
+
     sequence.actions.forEach((action) => {
       const eventId = Tone.Transport.schedule(
         (time) => this.executeAction(action, time),
@@ -268,11 +281,14 @@ class StepScheduler {
     if (action.type === 'tone') {
       const synth = action.foot === 'L' ? this.leftSynth : this.rightSynth;
       synth.triggerAttackRelease(action.note, 0.08, scheduledTime);
+
+      // Move logging here ensures it logs when it plays
       this.logEvent('step', {
         pattern: this.currentSequence?.name,
         foot: action.foot,
         at: scheduledTime,
       });
+
       Tone.Draw.schedule(() => this.setSprite(action.foot), scheduledTime);
       return;
     }

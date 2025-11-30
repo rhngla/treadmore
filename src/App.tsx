@@ -372,11 +372,7 @@ const App = () => {
     };
   };
 
-  const {
-    period: effectivePeriod,
-    asymmetry: effectiveAsymmetry,
-    valid: inputsValid,
-  } = getEffectiveValues(pattern);
+  const { valid: inputsValid } = getEffectiveValues(pattern);
 
   const onPatternPress = async (kind: PatternKind) => {
     logEvent('button', { name: 'select-pattern', pattern: kind });

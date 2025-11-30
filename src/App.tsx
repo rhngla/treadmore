@@ -148,9 +148,11 @@ class GallopPattern implements PatternDefinition {
 
 const PATTERNS: Record<PatternKind, PatternDefinition> = {
   walk: new WalkJogPattern(),
-  skip: new SkipPattern(),
   gallop: new GallopPattern(),
+  skip: new SkipPattern(),
 };
+
+const PATTERN_ORDER: PatternKind[] = ['walk', 'gallop', 'skip'];
 
 class StepScheduler {
   private nextCycleId: number | null = null;
@@ -317,6 +319,7 @@ const App = () => {
   const [asymmetryInput, setAsymmetryInput] = useState('0.00');
   const [displaySprite, setDisplaySprite] = useState<DisplaySprite>('L');
   const [isPlaying, setIsPlaying] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
 
   const logEvent = useCallback(
     (label: string, payload?: Record<string, unknown>) => {
@@ -435,7 +438,37 @@ const App = () => {
         <header>
           <p className="eyebrow">Metronome</p>
           <h1>TreadMore</h1>
-          <p className="lede">Cues for different gait patterns</p>
+          <div className="lede-row">
+            <p className="lede">Cues for different gait patterns</p>
+            <button
+              type="button"
+              className="info-button"
+              aria-pressed={showInfo}
+              aria-expanded={showInfo}
+              onClick={() => setShowInfo((value) => !value)}
+            >
+              ?
+            </button>
+          </div>
+          {showInfo && (
+            <div className="info-card" role="note">
+              <ul>
+                <li>This app provides audio-visual cues for different gait patterns.</li>
+                <li>Match their stepping pattern to the timing cues on the app.</li>
+                <li>
+                  Here are examples for what{' '}
+                  <a href="https://www.youtube.com/watch?v=w2CeZeCABNU" target="_blank" rel="noreferrer">
+                    galloping
+                  </a>{' '}
+                  and{' '}
+                  <a href="https://www.youtube.com/watch?v=m9MccH7mWO0" target="_blank" rel="noreferrer">
+                    skipping
+                  </a>{' '}
+                  look like.
+                </li>
+              </ul>
+            </div>
+          )}
         </header>
 
         <section className="beat-indicators">
@@ -447,11 +480,15 @@ const App = () => {
             />
           </div>
         </section>
+        <p className="status current-status">
+          Current pattern: <strong>{currentPattern.label}</strong>
+        </p>
 
         <section className="pattern-selector">
           <p className="section-title">Pattern</p>
           <div className="pattern-buttons">
-            {(Object.values(PATTERNS) as PatternDefinition[]).map((item) => {
+            {PATTERN_ORDER.map((kind) => {
+              const item = PATTERNS[kind];
               return (
                 <button
                   key={item.kind}
@@ -510,10 +547,6 @@ const App = () => {
         </section>
 
         <footer>
-          <p className="status">
-            Current pattern: <strong>{currentPattern.label}</strong> · Period{' '}
-            {effectivePeriod.toFixed(2)}s · Asymmetry {effectiveAsymmetry.toFixed(2)}
-          </p>
           <p className="status note">
             November 2025
           </p>
